@@ -31,8 +31,10 @@ cd /opt
 sudo git clone <repo-url> sleeper
 cd sleeper
 
-# Install Python dependencies
-pip3 install -r requirements.txt
+# Create virtual environment and install dependencies
+sudo apt install python3-full
+python3 -m venv /opt/sleeper/venv
+/opt/sleeper/venv/bin/pip install -r requirements.txt
 
 # Create stories directory and add your MP3 files
 mkdir -p ~/stories
