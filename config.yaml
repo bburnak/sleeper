@@ -1,0 +1,71 @@
+# Sleeper configuration
+# Copy to config.yaml and adjust as needed.
+
+# Path to directory containing MP3 story files
+stories_dir: ~/stories
+
+# Noise type: white, brown, or pink
+noise_type: white
+
+# Default volumes (0-100)
+noise_volume: 30
+story_volume: 60
+
+# Time to stop noise (24h format HH:MM)
+stop_time: "07:00"
+
+# Minutes before stop_time to begin fading noise out
+fade_out_minutes: 5
+
+# Seconds for story → noise crossfade
+crossfade_seconds: 10
+
+# Fraction of story that must play to count as "listened" (0.0-1.0)
+listened_threshold: 0.10
+
+# Volume adjustment step per hotkey press (percentage points)
+volume_step: 5
+
+# Input backend: gamepad, gpio, or keyboard
+input_backend: gamepad
+
+# Input device path, or "auto" to auto-detect
+input_device: auto
+
+# ALSA audio output device (use "default" for system default)
+audio_output: default
+
+# Path to play history file
+history_file: ~/.sleeper/history.json
+
+# How long a button must be held for a "long press" (seconds)
+long_press_seconds: 1.5
+
+# D-pad axis for volume control (evdev ABS code; 17 = ABS_HAT0Y)
+volume_dpad_axis: 17
+
+# Gamepad button mapping: evdev key code -> action name
+# Action names: start_story, skip, pause_resume, stop
+# "skip" short press = next story, long press = skip to noise
+# "stop" requires long press
+gamepad_mapping:
+  315: start_story    # BTN_START
+  307: skip           # BTN_NORTH (triangle)
+  304: pause_resume   # BTN_SOUTH (cross)
+  314: stop           # BTN_SELECT
+
+# Keyboard mapping (for development/testing with input_backend: keyboard)
+keyboard_mapping:
+  28: start_story     # KEY_ENTER
+  49: skip            # KEY_N
+  57: pause_resume    # KEY_SPACE
+  16: stop            # KEY_Q
+
+# GPIO pin mapping (for input_backend: gpio)
+gpio_pins:
+  start_story: 17
+  skip: 27
+  volume_up: 22
+  volume_down: 23
+  pause_resume: 24
+  stop: 25

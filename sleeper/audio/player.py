@@ -1,0 +1,128 @@
+from __future__ import annotations
+
+import logging
+import threading
+from typing import Callable
+
+import mpv
+
+log = logging.getLogger(__name__)
+
+
+class StoryPlayer:
+    """Plays MP3 stories via libmpv. Headless, no video."""
+
+    def __init__(self, audio_device: str = "default") -> None:
+        self._lock = threading.Lock()
+        self._player: mpv.MPV | None = None
+        self._on_end: Callable[[], None] | None = None
+        self._audio_device = audio_device
+        self._listened_recorded = False
+        self._listened_callback: Callable[[str], None] | None = None
+        self._current_file: str | None = None
+        self._listened_threshold: float = 0.10
+
+    def _ensure_player(self) -> mpv.MPV:
+        if self._player is None:
+            opts: dict = dict(video=False, terminal=False)
+            if self._audio_device != "default":
+                opts["audio_device"] = f"alsa/{self._audio_device}"
+            self._player = mpv.MPV(**opts)
+
+            @self._player.property_observer("percent-pos")
+            def _pos_observer(_name: str, value: float | None) -> None:
+                if value is None:
+                    return
+                self._check_listened(value / 100.0)
+
+            @self._player.event_callback("end-file")
+            def _end_handler(event: mpv.MpvEvent) -> None:
+                reason = event.get("event", {}).get("reason", None) if hasattr(event, "get") else None
+                # Fire on_end for natural end (not stop/redirect)
+                if self._on_end:
+                    self._on_end()
+
+        return self._player
+
+    def set_on_end(self, callback: Callable[[], None]) -> None:
+        self._on_end = callback
+
+    def set_listened_callback(self, callback: Callable[[str], None], threshold: float = 0.10) -> None:
+        """Register a callback invoked once when a story reaches the listened threshold."""
+        self._listened_callback = callback
+        self._listened_threshold = threshold
+
+    def _check_listened(self, fraction: float) -> None:
+        if (
+            not self._listened_recorded
+            and fraction >= self._listened_threshold
+            and self._listened_callback
+            and self._current_file
+        ):
+            self._listened_recorded = True
+            self._listened_callback(self._current_file)
+
+    def play(self, path: str, volume: int = 60) -> None:
+        with self._lock:
+            player = self._ensure_player()
+            self._listened_recorded = False
+            self._current_file = path
+            player.volume = volume
+            player.play(path)
+            log.info("Playing story: %s (vol=%d)", path, volume)
+
+    def pause(self) -> None:
+        with self._lock:
+            if self._player:
+                self._player.pause = True
+
+    def resume(self) -> None:
+        with self._lock:
+            if self._player:
+                self._player.pause = False
+
+    def toggle_pause(self) -> None:
+        with self._lock:
+            if self._player:
+                self._player.pause = not self._player.pause
+
+    def stop(self) -> None:
+        with self._lock:
+            if self._player:
+                self._player.stop(True)
+                log.info("Story stopped")
+
+    def set_volume(self, volume: int) -> None:
+        with self._lock:
+            if self._player:
+                self._player.volume = max(0, min(100, volume))
+
+    @property
+    def volume(self) -> int:
+        with self._lock:
+            if self._player:
+                return int(self._player.volume or 0)
+            return 0
+
+    @property
+    def position(self) -> float:
+        """Return playback position as fraction 0.0-1.0, or 0.0 if not playing."""
+        with self._lock:
+            if self._player:
+                pct = self._player.percent_pos
+                if pct is not None:
+                    return pct / 100.0
+            return 0.0
+
+    @property
+    def is_playing(self) -> bool:
+        with self._lock:
+            if self._player:
+                return not self._player.pause and self._player.percent_pos is not None
+            return False
+
+    def shutdown(self) -> None:
+        with self._lock:
+            if self._player:
+                self._player.terminate()
+                self._player = None

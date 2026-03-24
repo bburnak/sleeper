@@ -1,0 +1,30 @@
+[Unit]
+Description=Sleeper — bedtime story and noise machine
+After=sound.target bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m sleeper --config /etc/sleeper/config.yaml
+WorkingDirectory=/opt/sleeper
+Restart=on-failure
+RestartSec=5
+
+# Run as a dedicated user with access to audio, input devices, and GPIO
+User=sleeper
+Group=sleeper
+SupplementaryGroups=audio input gpio bluetooth
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/sleeper/.sleeper
+PrivateTmp=true
+
+# Allow access to audio and input devices
+DeviceAllow=/dev/snd/* rw
+DeviceAllow=/dev/input/* r
+
+[Install]
+WantedBy=multi-user.target
