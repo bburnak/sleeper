@@ -43,6 +43,9 @@ def _create_input_backend(config) -> InputBackend:
             key_mapping=config.keyboard_mapping,
             long_press_seconds=config.long_press_seconds,
         )
+    elif config.input_backend == "stdin":
+        from sleeper.input.stdin import StdinInput
+        return StdinInput()
     else:
         raise ValueError(f"Unknown input backend: {config.input_backend}")
 

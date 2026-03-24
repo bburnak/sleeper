@@ -76,14 +76,23 @@ Add an entry to `/etc/fstab`:
 
 ### SMB/CIFS
 
+First, find the numeric uid/gid for the sleeper user:
+
+```bash
+id sleeper_user_name
+# Example output: uid=1000(sleeper) gid=1000(sleeper) ...
 ```
-//NAS_IP/share_name/stories  /mnt/nas/stories  cifs  credentials=/etc/nas-credentials,uid=sleeper,gid=sleeper,ro,_netdev,x-systemd.automount,x-systemd.after=network-online.target  0  0
+
+Then add to `/etc/fstab` (replace uid/gid with your values):
+
+```
+//NAS_IP/share_name/stories  /mnt/nas/stories  cifs  credentials=/etc/nas-credentials,uid=1000,gid=1000,ro,nofail,_netdev  0  0
 ```
 
 ### NFS
 
 ```
-NAS_IP:/volume1/stories  /mnt/nas/stories  nfs  ro,_netdev,x-systemd.automount,x-systemd.after=network-online.target  0  0
+NAS_IP:/volume1/stories  /mnt/nas/stories  nfs  ro,nofail,_netdev  0  0
 ```
 
 Key options explained:
@@ -92,16 +101,20 @@ Key options explained:
 |---|---|
 | `ro` | Read-only — Sleeper only needs to read MP3 files |
 | `_netdev` | Wait for network before mounting |
-| `x-systemd.automount` | Mount on first access (don't block boot if NAS is down) |
-| `x-systemd.after=network-online.target` | Ensure network is up first |
-| `uid=sleeper,gid=sleeper` | Files appear owned by the sleeper user (SMB only) |
+| `nofail` | Don't block boot if NAS is unreachable |
+| `uid=1000,gid=1000` | Files appear owned by the sleeper user (SMB only; use numeric IDs from `id sleeper`) |
 
 Test the fstab entry without rebooting:
 
 ```bash
-sudo mount -a
+sudo systemctl daemon-reload
+sudo mount /mnt/nas/stories
 ls /mnt/nas/stories/
 ```
+
+> **Optional: systemd automount** — If you want the share to mount lazily on first access
+> (instead of at boot), you can add `noauto,x-systemd.automount` to the options.
+> Note that `x-systemd.*` options are only understood by systemd, not by `mount -a`.
 
 ## 5. Update Sleeper Config
 

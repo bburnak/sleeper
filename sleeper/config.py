@@ -86,7 +86,7 @@ class Config:
         if not (0 <= h <= 23 and 0 <= m <= 59):
             raise ValueError(f"stop_time out of range: '{self.stop_time}'")
 
-        valid_backends = ("gamepad", "gpio", "keyboard")
+        valid_backends = ("gamepad", "gpio", "keyboard", "stdin")
         if self.input_backend not in valid_backends:
             raise ValueError(f"input_backend must be one of {valid_backends}, got '{self.input_backend}'")
 
