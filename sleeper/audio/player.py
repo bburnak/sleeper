@@ -25,7 +25,9 @@ class StoryPlayer:
     def _ensure_player(self) -> mpv.MPV:
         if self._player is None:
             opts: dict = dict(video=False, terminal=False)
-            if self._audio_device != "default":
+            if self._audio_device == "default":
+                opts["audio_device"] = "alsa"
+            else:
                 opts["audio_device"] = f"alsa/{self._audio_device}"
             self._player = mpv.MPV(**opts)
 
