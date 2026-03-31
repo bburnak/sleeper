@@ -19,7 +19,6 @@ def _create_input_backend(config) -> InputBackend:
         return GamepadInput(
             device_path=config.input_device,
             button_mapping=config.gamepad_mapping,
-            volume_axis=config.volume_dpad_axis,
             long_press_seconds=config.long_press_seconds,
         )
     elif config.input_backend == "gpio":

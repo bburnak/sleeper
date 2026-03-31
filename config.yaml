@@ -32,8 +32,8 @@ input_backend: gamepad
 # Input device path, or "auto" to auto-detect
 input_device: auto
 
-# ALSA audio output device (use "default" for system default)
-audio_output: default
+# ALSA audio output device (use "default" for system default, "bluealsa" for Bluetooth)
+audio_output: bluealsa
 
 # Path to play history file
 history_file: ~/.sleeper/history.json
@@ -41,11 +41,8 @@ history_file: ~/.sleeper/history.json
 # How long a button must be held for a "long press" (seconds)
 long_press_seconds: 1.5
 
-# D-pad axis for volume control (evdev ABS code; 17 = ABS_HAT0Y)
-volume_dpad_axis: 17
-
 # Gamepad button mapping: evdev key code -> action name
-# Action names: start_story, skip, pause_resume, stop
+# Action names: start_story, skip, pause_resume, stop, volume_up, volume_down
 # "skip" short press = next story, long press = skip to noise
 # "stop" requires long press
 gamepad_mapping:
@@ -53,6 +50,8 @@ gamepad_mapping:
   307: skip           # BTN_NORTH (triangle)
   304: pause_resume   # BTN_SOUTH (cross)
   314: stop           # BTN_SELECT
+  544: volume_up      # BTN_DPAD_UP
+  545: volume_down    # BTN_DPAD_DOWN
 
 # Keyboard mapping (for development/testing with input_backend: keyboard)
 keyboard_mapping:

@@ -13,6 +13,8 @@ _ACTION_MAP = {
     "skip": None,  # resolved at runtime (short vs long press)
     "pause_resume": Action.PAUSE_RESUME,
     "stop": Action.STOP,
+    "volume_up": Action.VOLUME_UP,
+    "volume_down": Action.VOLUME_DOWN,
 }
 
 
@@ -23,13 +25,11 @@ class GamepadInput(InputBackend):
         self,
         device_path: str = "auto",
         button_mapping: dict[int, str] | None = None,
-        volume_axis: int = 17,
         long_press_seconds: float = 1.5,
     ) -> None:
         super().__init__()
         self._device_path = device_path
         self._mapping = button_mapping or {}
-        self._volume_axis = volume_axis
         self._long_press_sec = long_press_seconds
         self._running = False
 
@@ -95,13 +95,6 @@ class GamepadInput(InputBackend):
 
                         log.debug("Gamepad action: %s (held=%.1fs)", action.name, held)
                         self.emit(action)
-
-                # Axis events for volume (EV_ABS = 3)
-                elif event.type == 3 and event.code == self._volume_axis:
-                    if event.value == -1:
-                        self.emit(Action.VOLUME_UP)
-                    elif event.value == 1:
-                        self.emit(Action.VOLUME_DOWN)
 
         except OSError as e:
             log.error("Gamepad disconnected: %s", e)

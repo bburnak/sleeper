@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import struct
+import subprocess
 import threading
 import time
 
@@ -66,11 +68,17 @@ def _pink_noise(frames: int, rng: np.random.Generator, state: dict) -> np.ndarra
 
 
 class NoiseGenerator:
-    """Generate continuous noise via sounddevice streaming callback."""
+    """Generate continuous noise via sounddevice or aplay subprocess."""
 
     def __init__(self, device: str | None = None) -> None:
-        self._device = device if device != "default" else None
+        self._device_name = device or "default"
+        # Use aplay subprocess for devices PortAudio can't see (e.g. bluealsa)
+        self._use_aplay = self._device_name not in ("default", None)
+        self._device = None if self._device_name == "default" else self._device_name
         self._stream: sd.OutputStream | None = None
+        self._aplay_proc: subprocess.Popen | None = None
+        self._aplay_thread: threading.Thread | None = None
+        self._running = False
         self._volume: float = 0.3  # 0.0 - 1.0
         self._target_volume: float = 0.3
         self._fade_step: float = 0.0
@@ -126,6 +134,13 @@ class NoiseGenerator:
             self._pink_state["running_sum"] = 0.0
             self._pink_state["counter"] = 0
 
+        if self._use_aplay:
+            self._start_aplay()
+        else:
+            self._start_sounddevice()
+        log.info("Noise started: type=%s, volume=%d%%", noise_type, volume)
+
+    def _start_sounddevice(self) -> None:
         self._stream = sd.OutputStream(
             samplerate=SAMPLE_RATE,
             channels=1,
@@ -135,7 +150,50 @@ class NoiseGenerator:
             device=self._device,
         )
         self._stream.start()
-        log.info("Noise started: type=%s, volume=%d%%", noise_type, volume)
+
+    def _start_aplay(self) -> None:
+        self._running = True
+        self._aplay_proc = subprocess.Popen(
+            ["aplay", "-D", self._device_name, "-f", "S16_LE",
+             "-r", str(SAMPLE_RATE), "-c", "1", "-"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self._aplay_thread = threading.Thread(
+            target=self._aplay_loop, daemon=True, name="noise-aplay",
+        )
+        self._aplay_thread.start()
+
+    def _aplay_loop(self) -> None:
+        """Generate noise blocks and write PCM to aplay stdin."""
+        try:
+            while self._running and self._aplay_proc and self._aplay_proc.poll() is None:
+                with self._lock:
+                    vol = self._volume
+                    if self._noise_type == "brown":
+                        data = _brown_noise(BLOCK_SIZE, self._rng, self._brown_state)
+                    elif self._noise_type == "pink":
+                        data = _pink_noise(BLOCK_SIZE, self._rng, self._pink_state)
+                    else:
+                        data = _white_noise(BLOCK_SIZE, self._rng)
+
+                    if self._fade_step != 0.0:
+                        remaining = self._target_volume - self._volume
+                        if abs(remaining) < abs(self._fade_step):
+                            self._volume = self._target_volume
+                            self._fade_step = 0.0
+                        else:
+                            self._volume += self._fade_step
+                        vol = self._volume
+
+                pcm = (data * vol * 32767).astype(np.int16).tobytes()
+                try:
+                    self._aplay_proc.stdin.write(pcm)
+                except (BrokenPipeError, OSError):
+                    break
+        except Exception:
+            log.exception("aplay noise loop error")
 
     def set_volume(self, volume_pct: int) -> None:
         with self._lock:
@@ -172,11 +230,23 @@ class NoiseGenerator:
             return int(self._volume * 100)
 
     def stop(self) -> None:
+        self._running = False
         if self._stream is not None:
             self._stream.stop()
             self._stream.close()
             self._stream = None
-            log.info("Noise stopped")
+        if self._aplay_proc is not None:
+            try:
+                self._aplay_proc.stdin.close()
+            except OSError:
+                pass
+            self._aplay_proc.terminate()
+            self._aplay_proc.wait(timeout=5)
+            self._aplay_proc = None
+        if self._aplay_thread is not None:
+            self._aplay_thread.join(timeout=5)
+            self._aplay_thread = None
+        log.info("Noise stopped")
 
     def shutdown(self) -> None:
         self.stop()

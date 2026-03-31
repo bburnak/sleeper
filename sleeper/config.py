@@ -60,9 +60,6 @@ class Config:
         16: "stop",
     })
 
-    # D-pad axes for volume (evdev ABS codes)
-    volume_dpad_axis: int = 17  # ABS_HAT0Y on most gamepads
-
     def __post_init__(self) -> None:
         self._validate()
 
