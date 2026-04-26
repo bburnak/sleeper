@@ -33,18 +33,68 @@ The rest of this document explains the gotchas.
    or the Echo "forgets" the link, you have to drive the reconnect from the
    Pi side. A small systemd watchdog handles this.
 
+## Prerequisite: the Alexa app's "Use as Built-in Speaker" toggle must be ON
+
+In the Alexa app: **Devices → your Echo → Bluetooth Devices → "Use as Built-in
+Speaker"** (exact wording varies by Echo generation; on some it appears as
+"Use this Echo as a speaker"). This **must be enabled**.
+
+- ON  → Echo advertises the A2DP **Sink** UUID `0x110b` and accepts incoming
+  audio from a paired source. Pairing produces a usable
+  `a2dpsrc/sink` BlueALSA PCM (Pi=source, Echo=sink). This is what we want.
+- OFF → Echo advertises only A2DP **Source** (`0x110a`) plus AVRCP/PBAP/MAP
+  and tries to push *its* audio to a paired speaker. Pairing succeeds but
+  produces an `a2dpsnk/source` capture PCM with no way to play to the Echo.
+  `aplay` returns `No such device` / `PCM not found`.
+
+If the toggle was OFF when you paired, you must remove the device on **both
+sides** (Alexa app + `bluetoothctl remove`), flip the toggle ON, and pair
+again — the role is locked in at pairing time.
+
+Quick way to put the Echo into pairing mode without the app: say
+**"Alexa, pair"**. The Echo will announce "Searching for Bluetooth devices."
+
+## Naming gotcha: BlueALSA PCM paths are confusing
+
+BlueALSA names PCMs as `<transport>/<mode>` from the **Pi's** point of view:
+
+| BlueALSA PCM path        | Transport        | Mode             | Direction              | Useful for     |
+| ------------------------ | ---------------- | ---------------- | ---------------------- | -------------- |
+| `.../a2dpsrc/sink`       | A2DP-source (Pi) | sink (playback)  | **Pi → Echo**          | **Yes, this.** |
+| `.../a2dpsnk/source`     | A2DP-sink (Pi)   | source (capture) | Echo → Pi (mic-style)  | No.            |
+
+The one we want is `a2dpsrc/sink`. Don't be fooled by the word "sink" being
+in the path of the wrong one — `Mode: source` means it's a *capture* PCM.
+Always check `Transport:` and `Mode:` via `bluealsa-cli list-pcms -v`.
+
 ## Audio stack assumptions
 
 This guide assumes:
 
 - BlueZ (`bluetoothd`) and `bluez-alsa-utils` (`bluealsa.service`) are
   installed and running.
-- `bluealsa.service` is started with both `a2dp-source` and `a2dp-sink`
-  profiles. Verify with:
+- `bluealsa.service` runs with **only** the `a2dp-source` profile (Pi acts
+  as A2DP source, streaming to remote sinks). With both profiles enabled,
+  BlueZ may negotiate the wrong direction with multi-role devices like the
+  Echo and only expose an `a2dpsnk/source` capture PCM. Verify:
 
   ```bash
   systemctl cat bluealsa.service | grep ExecStart
-  # Should include: -p a2dp-source -p a2dp-sink
+  # Should include:  -p a2dp-source     (and NOT -p a2dp-sink)
+  ```
+
+  If your distro's unit ships with `-p a2dp-source -p a2dp-sink`, add a
+  drop-in:
+
+  ```bash
+  sudo mkdir -p /etc/systemd/system/bluealsa.service.d
+  sudo tee /etc/systemd/system/bluealsa.service.d/override.conf >/dev/null <<'EOF'
+  [Service]
+  ExecStart=
+  ExecStart=/usr/bin/bluealsa -S -p a2dp-source
+  EOF
+  sudo systemctl daemon-reload
+  sudo systemctl restart bluealsa.service
   ```
 
 - No PulseAudio/PipeWire user session is grabbing the BlueZ media endpoints.
@@ -57,9 +107,18 @@ sudo apt install bluez bluez-alsa-utils alsa-utils
 sudo systemctl enable --now bluetooth.service bluealsa.service
 ```
 
+## Step 0: Confirm the Alexa app settings
+
+Before pairing, in the Alexa app open **Devices → your Echo → Bluetooth
+Devices** and make sure **"Use as Built-in Speaker"** is ON. See the
+prerequisite section above for why this matters. If it was off, also forget
+the device on the Pi (`bluetoothctl remove <MAC>`) before re-pairing — the
+role is fixed at pairing time.
+
 ## Step 1: Pair the Echo
 
-Put the Echo into pairing mode via the Alexa app. Then, on the Pi:
+Put the Echo into pairing mode (Alexa app, or simply say *"Alexa, pair"*).
+Then, on the Pi:
 
 ```bash
 bluetoothctl
@@ -187,7 +246,9 @@ sudo systemctl restart sleeper.service
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| `aplay: ... PCM not found` | Connected on wrong (source) role | Re-run Step 2 |
+| `aplay: ... PCM not found` / `No such device` | Connected on wrong role; only `a2dpsnk/source` PCM exists | Verify Alexa app "Use as Built-in Speaker" is ON, `bluetoothctl remove` + re-pair, ensure bluealsa is `-p a2dp-source` only |
+| Echo's UUIDs after pairing don't include `0000110b` | "Use as Built-in Speaker" was OFF at pairing time | Toggle ON in Alexa app, `bluetoothctl remove <MAC>`, pair again |
+| Pairing keeps producing `a2dpsnk/source` PCM even with toggle ON | bluealsa running with both `a2dp-source` and `a2dp-sink` | Apply source-only drop-in (see **Audio stack assumptions**) |
 | Echo announces "Now connected" repeatedly | Watchdog using `GetPCMs` D-Bus call | Reinstall current script (uses `bluealsa-cli`) |
 | `bluealsa-cli` missing | Wrong package | `sudo apt install bluez-alsa-utils` |
 | `Connection refused (111)` from `bluetoothd` for `a2dp-source` | The Echo is the source; you tried to connect that profile from the Pi | Ignore — the script targets the *sink* profile only |
