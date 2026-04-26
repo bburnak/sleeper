@@ -7,6 +7,7 @@ import sys
 import threading
 
 from sleeper.config import load_config
+from sleeper.display.base import DisplayBackend
 from sleeper.input.base import InputBackend
 from sleeper.session import SessionManager
 
@@ -45,8 +46,38 @@ def _create_input_backend(config) -> InputBackend:
     elif config.input_backend == "stdin":
         from sleeper.input.stdin import StdinInput
         return StdinInput()
+    elif config.input_backend == "none":
+        from sleeper.input.none import NoneInput
+        return NoneInput()
+    elif config.input_backend == "touchscreen":
+        from sleeper.input.touchscreen import TouchscreenInput
+        return TouchscreenInput(
+            device_path=config.display_touch_device,
+            screen_width=config.display_width,
+            screen_height=config.display_height,
+            raw_x_min=config.touch_raw_x_min,
+            raw_x_max=config.touch_raw_x_max,
+            raw_y_min=config.touch_raw_y_min,
+            raw_y_max=config.touch_raw_y_max,
+            swap_xy=config.touch_swap_xy,
+            invert_x=config.touch_invert_x,
+            invert_y=config.touch_invert_y,
+        )
     else:
         raise ValueError(f"Unknown input backend: {config.input_backend}")
+
+
+def _create_display_backend(config) -> DisplayBackend:
+    if config.display_backend == "pygame":
+        from sleeper.display.pygame_fb import PygameFbDisplay
+        return PygameFbDisplay(
+            width=config.display_width,
+            height=config.display_height,
+            fb_device=config.display_fb_device,
+        )
+    else:  # "none"
+        from sleeper.display.none import NoneDisplay
+        return NoneDisplay()
 
 
 def main() -> None:
@@ -71,6 +102,10 @@ def main() -> None:
     backend = _create_input_backend(config)
     backend.set_callback(session.handle_action)
 
+    display = _create_display_backend(config)
+    display.set_action_callback(session.handle_action)
+    session.set_display(display)
+
     # Graceful shutdown on SIGTERM / SIGINT
     shutdown_event = threading.Event()
 
@@ -78,14 +113,17 @@ def main() -> None:
         log.info("Received signal %d, shutting down...", signum)
         backend.stop()
         session.shutdown()
+        display.stop()
         shutdown_event.set()
 
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    # Run input backend in a thread so we can wait for shutdown signal from main thread
+    # Run input and display backends in threads
     input_thread = threading.Thread(target=backend.run, daemon=True, name="input")
+    display_thread = threading.Thread(target=display.run, daemon=True, name="display")
     input_thread.start()
+    display_thread.start()
 
     log.info("Sleeper is ready. Waiting for input...")
 

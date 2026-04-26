@@ -60,6 +60,30 @@ class Config:
         16: "stop",
     })
 
+    # Display backend: pygame (framebuffer LCD) or none
+    display_backend: str = "none"
+    # Framebuffer device (e.g. /dev/fb0 or /dev/fb1)
+    display_fb_device: str = "/dev/fb1"
+    # Touch/mouse evdev input device for the display
+    display_touch_device: str = "/dev/input/event0"
+    # LCD resolution
+    display_width: int = 480
+    display_height: int = 320
+
+    # Touchscreen input calibration (used by input_backend: touchscreen)
+    touch_raw_x_min: int = 150
+    touch_raw_x_max: int = 3950
+    touch_raw_y_min: int = 150
+    touch_raw_y_max: int = 3950
+    touch_swap_xy: bool = True
+    touch_invert_x: bool = False
+    touch_invert_y: bool = False
+
+    # ALSA mixer control name for volume adjustment (use 'PCM' on Pi, 'Master' on desktop)
+    alsa_mixer_control: str = "PCM"
+    # ALSA card index used by amixer (None = auto-detect/fallback)
+    alsa_card: int | None = None
+
     def __post_init__(self) -> None:
         self._validate()
 
@@ -83,9 +107,13 @@ class Config:
         if not (0 <= h <= 23 and 0 <= m <= 59):
             raise ValueError(f"stop_time out of range: '{self.stop_time}'")
 
-        valid_backends = ("gamepad", "gpio", "keyboard", "stdin")
+        valid_backends = ("gamepad", "gpio", "keyboard", "stdin", "none", "touchscreen")
         if self.input_backend not in valid_backends:
             raise ValueError(f"input_backend must be one of {valid_backends}, got '{self.input_backend}'")
+
+        valid_displays = ("pygame", "none")
+        if self.display_backend not in valid_displays:
+            raise ValueError(f"display_backend must be one of {valid_displays}, got '{self.display_backend}'") 
 
     @property
     def stories_path(self) -> Path:

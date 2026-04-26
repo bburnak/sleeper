@@ -1,0 +1,13 @@
+[Unit]
+Description=Echo Dot Bluetooth A2DP auto-connect watchdog
+After=bluetooth.service bluealsa.service
+Wants=bluetooth.service bluealsa.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/echo-bt-connect.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
