@@ -104,6 +104,40 @@ sudo systemctl status sleeper
 sudo journalctl -u sleeper -f
 ```
 
+## Updating a Deployment
+
+If `/opt/sleeper` is a git checkout of this repo (recommended), pull the latest
+code and restart the service:
+
+```bash
+ssh baris@pi3b2.local 'cd /opt/sleeper && sudo -u sleeper git pull && sudo systemctl restart sleeper.service'
+```
+
+If `/opt/sleeper` is currently a flat copy of the package (no `.git`), convert
+it to a checkout once:
+
+```bash
+sudo systemctl stop sleeper.service
+sudo mv /opt/sleeper /opt/sleeper.bak
+sudo git clone https://github.com/bburnak/sleeper.git /opt/sleeper
+sudo mv /opt/sleeper.bak/venv /opt/sleeper/venv
+sudo chown -R sleeper:sleeper /opt/sleeper
+# The systemd unit's PYTHONPATH should point at /opt/sleeper:
+sudo sed -i 's|^Environment=PYTHONPATH=/opt$|Environment=PYTHONPATH=/opt/sleeper|' \
+    /etc/systemd/system/sleeper.service
+sudo systemctl daemon-reload
+sudo systemctl start sleeper.service
+# Once you're satisfied:
+sudo rm -rf /opt/sleeper.bak
+```
+
+## Pairing an Amazon Echo for Audio Output
+
+To stream Sleeper's audio to an Echo Dot over Bluetooth A2DP, see
+[docs/pairing-echo-bluetooth.md](docs/pairing-echo-bluetooth.md). The
+[scripts/pair-echo.sh](scripts/pair-echo.sh) helper handles pairing and
+installs an auto-reconnect watchdog in one step.
+
 ## PS3 Controller Pairing
 
 The PS3 (Sixaxis/DualShock 3) controller uses a non-standard Bluetooth protocol. Install `sixad`:
