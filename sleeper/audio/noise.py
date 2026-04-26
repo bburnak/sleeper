@@ -241,7 +241,15 @@ class NoiseGenerator:
             except OSError:
                 pass
             self._aplay_proc.terminate()
-            self._aplay_proc.wait(timeout=5)
+            try:
+                self._aplay_proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                log.warning("aplay did not exit after terminate; killing")
+                self._aplay_proc.kill()
+                try:
+                    self._aplay_proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    log.error("aplay did not exit after kill; abandoning")
             self._aplay_proc = None
         if self._aplay_thread is not None:
             self._aplay_thread.join(timeout=5)
