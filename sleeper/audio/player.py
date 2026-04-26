@@ -24,7 +24,10 @@ class StoryPlayer:
 
     def _ensure_player(self) -> mpv.MPV:
         if self._player is None:
-            opts: dict = dict(video=False, terminal=False)
+            # Force ALSA output so audio_device is honored (mpv otherwise
+            # picks pulseaudio/pipewire if available and silently ignores
+            # the ALSA device string).
+            opts: dict = dict(video=False, terminal=False, ao="alsa")
             if self._audio_device == "default":
                 opts["audio_device"] = "alsa"
             else:
