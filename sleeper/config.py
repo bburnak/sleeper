@@ -70,6 +70,13 @@ class Config:
     display_width: int = 480
     display_height: int = 320
 
+    # Screen power management (only relevant for display_backend: pygame).
+    # Seconds of inactivity before the LCD backlight turns off. 0 disables.
+    screen_idle_timeout: float = 60.0
+    # Path to a sysfs bl_power file. "auto" auto-discovers under
+    # /sys/class/backlight/. Falls back to /sys/class/graphics/<fb>/blank.
+    screen_backlight_path: str = "auto"
+
     # Touchscreen input calibration (used by input_backend: touchscreen)
     touch_raw_x_min: int = 150
     touch_raw_x_max: int = 3950
