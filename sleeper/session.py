@@ -55,6 +55,9 @@ class SessionManager:
             self._on_story_listened, threshold=config.listened_threshold
         )
         self.player.set_on_end(self._on_story_ended)
+        self.player.set_overlap_callback(
+            self._on_story_overlap, seconds=config.crossfade_overlap_seconds
+        )
 
     # ── Public actions (called from input layer) ──
 
@@ -227,9 +230,39 @@ class SessionManager:
         log.info("Story '%s' reached listened threshold, recording", filename)
         self.history.record_listen(filename)
 
+    def _on_story_overlap(self) -> None:
+        """Called when story has `crossfade_overlap_seconds` remaining.
+
+        Pre-warm the noise stream so it's already playing through the same
+        audio device (and BT A2DP link) by the time the story ends. Story
+        keeps playing to its natural end; on EOF we just transition state.
+        """
+        overlap = self.config.crossfade_overlap_seconds
+        with self._lock:
+            if self.state != State.PLAYING_STORY:
+                return
+            self.state = State.CROSSFADING
+
+        # Run noise startup off the mpv property-observer thread so we don't
+        # block mpv's event loop with subprocess spawn / FFT generation.
+        def _start() -> None:
+            log.info("Pre-warming noise %.1fs before story end (overlap crossfade)", overlap)
+            self.noise.start(self.config.noise_type, volume=0)
+            self.noise.fade_to(self._current_volume, overlap)
+            self._notify_display()
+
+        threading.Thread(target=_start, daemon=True, name="overlap-prewarm").start()
+
     def _on_story_ended(self) -> None:
         """Called by mpv when a story finishes naturally."""
         with self._lock:
+            if self.state == State.CROSSFADING:
+                # Overlap pre-warm already started noise; just settle into
+                # PLAYING_NOISE without reopening the PCM (link stays warm).
+                self.state = State.PLAYING_NOISE
+                log.info("Story ended; noise already playing (overlap crossfade)")
+                self._notify_display()
+                return
             if self.state != State.PLAYING_STORY:
                 return
             self.state = State.CROSSFADING

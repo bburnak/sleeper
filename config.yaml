@@ -20,6 +20,13 @@ fade_out_minutes: 5
 # Seconds for story → noise crossfade
 crossfade_seconds: 10
 
+# Seconds to overlap noise with end of story (0 = legacy post-EOF crossfade).
+# When > 0, noise starts this many seconds *before* the story ends and fades
+# up to volume over the same interval. The story keeps playing to its natural
+# end, so the audio device (and Bluetooth A2DP link) never goes idle at the
+# story → noise handover.
+crossfade_overlap_seconds: 5
+
 # Fraction of story that must play to count as "listened" (0.0-1.0)
 listened_threshold: 0.10
 

@@ -22,6 +22,9 @@ class StoryPlayer:
         self._current_file: str | None = None
         self._listened_threshold: float = 0.10
         self._expecting_stop: bool = False
+        self._overlap_callback: Callable[[], None] | None = None
+        self._overlap_seconds: float = 0.0
+        self._overlap_fired: bool = False
 
     def _ensure_player(self) -> mpv.MPV:
         if self._player is None:
@@ -41,6 +44,12 @@ class StoryPlayer:
                     return
                 self._check_listened(value / 100.0)
 
+            @self._player.property_observer("time-remaining")
+            def _remaining_observer(_name: str, value: float | None) -> None:
+                if value is None:
+                    return
+                self._check_overlap(value)
+
             @self._player.event_callback("end-file")
             def _end_handler(event: mpv.MpvEvent) -> None:
                 # Suppress on_end when the stop was requested by us (skip/stop/replace).
@@ -55,7 +64,32 @@ class StoryPlayer:
 
     def set_on_end(self, callback: Callable[[], None]) -> None:
         self._on_end = callback
+set_overlap_callback(self, callback: Callable[[], None], seconds: float) -> None:
+        """Register a callback invoked once per story when remaining time <= seconds.
 
+        Used to pre-warm the noise stream before the story ends so the audio
+        device (and Bluetooth A2DP link) never goes idle at the handover.
+        Pass seconds <= 0 to disable.
+        """
+        self._overlap_callback = callback if seconds > 0 else None
+        self._overlap_seconds = max(0.0, seconds)
+
+    def _check_overlap(self, remaining: float) -> None:
+        if (
+            not self._overlap_fired
+            and self._overlap_callback is not None
+            and self._overlap_seconds > 0
+            and remaining <= self._overlap_seconds
+            and remaining >= 0
+        ):
+            self._overlap_fired = True
+            try:
+                seoverlap_fired = False
+            self._lf._overlap_callback()
+            except Exception:
+                log.exception("overlap callback raised")
+
+    def 
     def set_listened_callback(self, callback: Callable[[str], None], threshold: float = 0.10) -> None:
         """Register a callback invoked once when a story reaches the listened threshold."""
         self._listened_callback = callback

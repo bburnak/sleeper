@@ -227,14 +227,48 @@ sudo systemctl enable --now echo-bt-connect.service
 
 Edit `MAC=` at the top of the script if your Echo's address differs.
 
+## Step 4.5: Force 48 kHz / 2-channel SBC via an ALSA plug wrapper
+
+BlueALSA negotiates the SBC codec parameters from the **first client's**
+stream format. If the first thing that opens the PCM is mono / 44.1 kHz
+(many MP3s), you'll see
+`Selected codec: SBC:281502fa` (44.1 kHz, mono) in `bluealsa-cli list-pcms -v`
+and the Echo will go silent even though bytes are flowing — Pi-side
+`speaker-test` reports no errors but you hear nothing.
+
+Force 48 kHz / stereo / S16_LE up front by defining a named ALSA PCM in
+`/etc/asound.conf`:
+
+```
+pcm.echo {
+    type plug
+    slave {
+        pcm { type bluealsa; device "D8:FB:D6:CA:D8:1D"; profile "a2dp" }
+        format S16_LE
+        rate 48000
+        channels 2
+    }
+}
+ctl.echo { type bluealsa }
+```
+
+Then verify `aplay -D echo /usr/share/sounds/alsa/Front_Center.wav` is
+audible and `bluealsa-cli list-pcms -v` shows `Selected codec: SBC:111502fa`
+(48 kHz, stereo).
+
 ## Step 5: Wire Sleeper to the Echo
 
-Set Sleeper's `audio_output` to the BlueALSA PCM string for your Echo:
+Use the named PCM (`echo`) defined above so the codec is locked to 48 kHz
+stereo regardless of source file format:
 
 ```yaml
 # /etc/sleeper/config.yaml
-audio_output: bluealsa:DEV=D8:FB:D6:CA:D8:1D,PROFILE=a2dp
+audio_output: echo
 ```
+
+(mpv will resolve this to `alsa/echo`.) If you skipped Step 4.5 you can
+use `audio_output: bluealsa:DEV=D8:FB:D6:CA:D8:1D,PROFILE=a2dp` instead,
+but you risk the silent-playback codec mismatch above.
 
 Then restart Sleeper:
 
@@ -254,6 +288,8 @@ sudo systemctl restart sleeper.service
 | `Connection refused (111)` from `bluetoothd` for `a2dp-source` | The Echo is the source; you tried to connect that profile from the Pi | Ignore — the script targets the *sink* profile only |
 | Choppy audio | 2.4 GHz Wi-Fi + Bluetooth coexistence on Pi 3 | Switch the Pi to 5 GHz Wi-Fi |
 | `Device1.ConnectProfile` returns `org.bluez.Error.Failed` | Echo not in range or not powered on | Wake the Echo, retry |
+| Echo's PCM line is `a2dpsrc/sink` and `speaker-test` exits cleanly but no audio | SBC codec negotiated at 44.1 kHz mono (`SBC:281502fa`) | Apply the `pcm.echo` plug wrapper in **Step 4.5** to force 48 kHz / 2 ch |
+| After unplugging / power-cycling the Echo: `bluetoothctl info` shows `Paired: no, Trusted: yes`, `connect` fails with `br-connection-page-timeout`, no PCMs | Echo dropped the Pi's link key on power loss (firmware behaviour) | Forget in Alexa app, voice "Alexa, pair", run the Step 1 sequence again. Pi-side bond survives Pi reboots, only Echo power events lose it. |
 
 ## Useful one-liners
 

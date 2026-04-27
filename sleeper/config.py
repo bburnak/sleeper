@@ -26,6 +26,12 @@ class Config:
     stop_time: str = "07:00"
     fade_out_minutes: int = 5
     crossfade_seconds: int = 10
+    # If > 0, start noise this many seconds *before* the story ends and fade
+    # noise up to volume over the same interval. Story keeps playing to its
+    # natural end so both streams overlap on the audio device — keeps the BT
+    # A2DP link warm across the story-end / noise-start handover.
+    # If 0, fall back to legacy post-EOF crossfade using crossfade_seconds.
+    crossfade_overlap_seconds: int = 5
     listened_threshold: float = 0.10
     volume_step: int = 5
     input_backend: str = "gamepad"
@@ -96,6 +102,11 @@ class Config:
             val = getattr(self, name)
             if not 0 <= val <= 100:
                 raise ValueError(f"{name} must be 0-100, got {val}")
+
+        if self.crossfade_overlap_seconds < 0:
+            raise ValueError(
+                f"crossfade_overlap_seconds must be >= 0, got {self.crossfade_overlap_seconds}"
+            )
 
         if not 0.0 < self.listened_threshold <= 1.0:
             raise ValueError(f"listened_threshold must be in (0, 1], got {self.listened_threshold}")
