@@ -76,6 +76,12 @@ class Config:
     # Path to a sysfs bl_power file. "auto" auto-discovers under
     # /sys/class/backlight/. Falls back to /sys/class/graphics/<fb>/blank.
     screen_backlight_path: str = "auto"
+    # Optional: BCM GPIO pin that drives the LCD backlight (e.g. 18 on the
+    # Hosyond/MPI3501-style 3.5" TFT). When set, takes precedence over
+    # backlight_path/blank. Set to -1 (or null) to disable.
+    screen_backlight_gpio: int = -1
+    # If true, GPIO HIGH = backlight on (default for tft35a).
+    screen_backlight_gpio_active_high: bool = True
 
     # Touchscreen input calibration (used by input_backend: touchscreen)
     touch_raw_x_min: int = 150

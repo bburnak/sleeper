@@ -41,6 +41,10 @@ audio_output: bluealsa
 screen_idle_timeout: 60
 # sysfs bl_power file; "auto" picks the first /sys/class/backlight/*/bl_power.
 screen_backlight_path: auto
+# BCM GPIO pin driving the backlight (e.g. 18 on Hosyond/MPI3501 tft35a).
+# Takes precedence over screen_backlight_path. Set to -1 to disable.
+screen_backlight_gpio: -1
+screen_backlight_gpio_active_high: true
 
 # Path to play history file
 history_file: ~/.sleeper/history.json
