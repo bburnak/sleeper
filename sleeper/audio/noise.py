@@ -11,9 +11,18 @@ import sounddevice as sd
 
 log = logging.getLogger(__name__)
 
-# Sample rate — 22050 Hz is sufficient for noise and lighter on RPi 3
-SAMPLE_RATE = 22050
-BLOCK_SIZE = 2048
+# 48000 Hz matches BlueALSA's A2DP codec rate, avoiding pitch-shift when
+# aplay writes directly to a `bluealsa:...` device (no `plug` wrapper).
+SAMPLE_RATE = 48000
+BLOCK_SIZE = 4096
+
+# Brown noise parameters (tuned for SAMPLE_RATE = 48000)
+# Leaky integrator: y[n] = LEAK * y[n-1] + STEP * white[n]
+# Steady-state std ≈ STEP / sqrt(1 - LEAK^2). With STEP=0.02, LEAK=0.999
+# -> std ≈ 0.447, peaks comfortably below 1.0 after GAIN scaling.
+_BROWN_LEAK = 0.999
+_BROWN_STEP = 0.02
+_BROWN_GAIN = 1.8
 
 
 def _white_noise(frames: int, rng: np.random.Generator) -> np.ndarray:
@@ -24,16 +33,16 @@ def _brown_noise(frames: int, rng: np.random.Generator, state: list[float]) -> n
     white = rng.standard_normal(frames).astype(np.float32)
     out = np.empty(frames, dtype=np.float32)
     val = state[0]
+    leak = _BROWN_LEAK
+    step = _BROWN_STEP
     for i in range(frames):
-        val += white[i] * 0.02
-        # Leaky integrator to prevent drift
-        val *= 0.998
+        val = leak * val + step * white[i]
         out[i] = val
     state[0] = val
-    # Normalize to roughly [-1, 1]
-    peak = np.abs(out).max()
-    if peak > 0:
-        out /= peak
+    # Fixed gain — DO NOT normalize per block (causes volume pumping and
+    # brightens the spectrum, defeating the purpose of brown noise).
+    np.multiply(out, _BROWN_GAIN, out=out)
+    np.clip(out, -1.0, 1.0, out=out)
     return out
 
 

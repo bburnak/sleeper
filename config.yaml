@@ -5,7 +5,7 @@
 stories_dir: ~/stories
 
 # Noise type: white, brown, or pink
-noise_type: white
+noise_type: brown
 
 # Default volumes (0-100)
 noise_volume: 30
