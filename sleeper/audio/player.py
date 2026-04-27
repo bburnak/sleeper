@@ -21,6 +21,7 @@ class StoryPlayer:
         self._listened_callback: Callable[[str], None] | None = None
         self._current_file: str | None = None
         self._listened_threshold: float = 0.10
+        self._expecting_stop: bool = False
 
     def _ensure_player(self) -> mpv.MPV:
         if self._player is None:
@@ -42,8 +43,11 @@ class StoryPlayer:
 
             @self._player.event_callback("end-file")
             def _end_handler(event: mpv.MpvEvent) -> None:
-                reason = event.get("event", {}).get("reason", None) if hasattr(event, "get") else None
-                # Fire on_end for natural end (not stop/redirect)
+                # Suppress on_end when the stop was requested by us (skip/stop/replace).
+                # Only fire for natural end-of-file (or unknown reasons treated as natural).
+                if self._expecting_stop:
+                    self._expecting_stop = False
+                    return
                 if self._on_end:
                     self._on_end()
 
@@ -72,6 +76,10 @@ class StoryPlayer:
             player = self._ensure_player()
             self._listened_recorded = False
             self._current_file = path
+            # Replacing current file via play() will fire end-file for the
+            # outgoing track; suppress it so we don't trigger crossfade-to-noise.
+            if player.percent_pos is not None:
+                self._expecting_stop = True
             player.volume = volume
             player.play(path)
             log.info("Playing story: %s (vol=%d)", path, volume)
@@ -94,6 +102,7 @@ class StoryPlayer:
     def stop(self) -> None:
         with self._lock:
             if self._player:
+                self._expecting_stop = True
                 self._player.stop(True)
                 log.info("Story stopped")
 
