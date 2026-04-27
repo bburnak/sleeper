@@ -64,7 +64,8 @@ class StoryPlayer:
 
     def set_on_end(self, callback: Callable[[], None]) -> None:
         self._on_end = callback
-set_overlap_callback(self, callback: Callable[[], None], seconds: float) -> None:
+
+    def set_overlap_callback(self, callback: Callable[[], None], seconds: float) -> None:
         """Register a callback invoked once per story when remaining time <= seconds.
 
         Used to pre-warm the noise stream before the story ends so the audio
@@ -79,17 +80,14 @@ set_overlap_callback(self, callback: Callable[[], None], seconds: float) -> None
             not self._overlap_fired
             and self._overlap_callback is not None
             and self._overlap_seconds > 0
-            and remaining <= self._overlap_seconds
-            and remaining >= 0
+            and 0 <= remaining <= self._overlap_seconds
         ):
             self._overlap_fired = True
             try:
-                seoverlap_fired = False
-            self._lf._overlap_callback()
+                self._overlap_callback()
             except Exception:
                 log.exception("overlap callback raised")
 
-    def 
     def set_listened_callback(self, callback: Callable[[str], None], threshold: float = 0.10) -> None:
         """Register a callback invoked once when a story reaches the listened threshold."""
         self._listened_callback = callback
@@ -109,6 +107,7 @@ set_overlap_callback(self, callback: Callable[[], None], seconds: float) -> None
         with self._lock:
             player = self._ensure_player()
             self._listened_recorded = False
+            self._overlap_fired = False
             self._current_file = path
             # Replacing current file via play() will fire end-file for the
             # outgoing track; suppress it so we don't trigger crossfade-to-noise.
