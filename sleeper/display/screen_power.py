@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import errno
 import logging
-import shutil
-import subprocess
 import threading
 import time
 from pathlib import Path
@@ -42,29 +40,24 @@ class ScreenPower:
         self._is_on = True
         self._last_activity = time.monotonic()
 
-        self._gpio_pin: int | None = None
+        self._gpio = None
         self._gpio_active_high = bool(backlight_gpio_active_high)
-        self._pinctrl: str | None = None
         self._bl_path: Path | None = None
         self._blank_path: Path | None = None
 
-        # Strategy 0: GPIO backlight control via /usr/bin/pinctrl
+        # Strategy 0: GPIO backlight control
         if backlight_gpio is not None and backlight_gpio >= 0:
-            self._pinctrl = shutil.which("pinctrl")
-            if self._pinctrl is None:
-                log.warning("screen_power: pinctrl not found; cannot control GPIO%s", backlight_gpio)
-            else:
-                self._gpio_pin = int(backlight_gpio)
-                # Initialise pin as output, driven to 'on' state.
-                level = "dh" if self._gpio_active_high else "dl"
-                try:
-                    subprocess.run(
-                        [self._pinctrl, "set", str(self._gpio_pin), "op", level],
-                        check=True, capture_output=True, timeout=2,
-                    )
-                except Exception as exc:
-                    log.warning("screen_power: pinctrl init for GPIO%d failed: %s", self._gpio_pin, exc)
-                    self._gpio_pin = None
+            try:
+                from gpiozero import DigitalOutputDevice
+
+                self._gpio = DigitalOutputDevice(
+                    int(backlight_gpio),
+                    active_high=self._gpio_active_high,
+                    initial_value=True,
+                )
+            except Exception as exc:
+                log.warning("screen_power: failed to init GPIO%s: %s", backlight_gpio, exc)
+                self._gpio = None
 
         # Strategy 1: explicit or auto-discovered backlight bl_power
         if backlight_path and backlight_path != "auto":
@@ -91,10 +84,10 @@ class ScreenPower:
         except Exception:
             pass
 
-        if self._gpio_pin is not None:
+        if self._gpio is not None:
             log.info(
-                "screen_power: using GPIO%d via pinctrl (active_high=%s, timeout=%.0fs)",
-                self._gpio_pin, self._gpio_active_high, self._timeout,
+                "screen_power: using GPIO%d (active_high=%s, timeout=%.0fs)",
+                int(backlight_gpio), self._gpio_active_high, self._timeout,
             )
         elif self._bl_path:
             log.info("screen_power: using backlight %s (timeout=%.0fs)", self._bl_path, self._timeout)
@@ -155,18 +148,15 @@ class ScreenPower:
         log.info("screen: sleep")
 
     def _set_power(self, on: bool) -> None:
-        if self._gpio_pin is not None and self._pinctrl is not None:
-            # active_high=True -> on means HIGH (dh); False -> on means LOW (dl)
-            high = on if self._gpio_active_high else (not on)
-            level = "dh" if high else "dl"
+        if self._gpio is not None:
             try:
-                subprocess.run(
-                    [self._pinctrl, "set", str(self._gpio_pin), "op", level],
-                    check=True, capture_output=True, timeout=2,
-                )
+                if on:
+                    self._gpio.on()
+                else:
+                    self._gpio.off()
                 return
             except Exception as exc:
-                log.warning("screen_power: pinctrl set GPIO%d %s failed: %s", self._gpio_pin, level, exc)
+                log.warning("screen_power: GPIO toggle failed: %s", exc)
 
         if self._bl_path is not None:
             value = b"0" if on else b"4"  # bl_power: 0=on, 4=off (FB_BLANK_POWERDOWN)
