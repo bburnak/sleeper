@@ -110,8 +110,6 @@ def main() -> None:
             idle_timeout=config.screen_idle_timeout,
             backlight_path=config.screen_backlight_path,
             fb_device=config.display_fb_device,
-            backlight_gpio=config.screen_backlight_gpio if config.screen_backlight_gpio >= 0 else None,
-            backlight_gpio_active_high=config.screen_backlight_gpio_active_high,
         )
         session.set_screen_power(screen_power)
 

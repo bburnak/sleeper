@@ -16,13 +16,13 @@ FB_BLANK_POWERDOWN = 4
 class ScreenPower:
     """Tracks user activity and turns the LCD backlight on/off accordingly.
 
-    Strategies tried in order:
-      0. GPIO pin via gpiozero (``backlight_gpio``, e.g. 18 on tft35a/Hosyond)
+    Two strategies are tried in order:
       1. ``/sys/class/backlight/<name>/bl_power``  (0 = on, 4 = off)
       2. ``/sys/class/graphics/<fb>/blank``        (0 = unblank, 4 = power-off)
 
-    If none work, the instance still tracks idle state so callers can use
-    ``is_on`` for first-tap-swallow logic, but power changes become no-ops.
+    If neither file is writable, the instance still tracks idle state so
+    callers can use ``is_on`` for first-tap-swallow logic, but power changes
+    become no-ops.
 
     All methods are thread-safe.
     """
@@ -32,32 +32,14 @@ class ScreenPower:
         idle_timeout: float = 60.0,
         backlight_path: str | None = None,
         fb_device: str = "/dev/fb1",
-        backlight_gpio: int | None = None,
-        backlight_gpio_active_high: bool = True,
     ) -> None:
         self._timeout = float(idle_timeout)
         self._lock = threading.Lock()
         self._is_on = True
         self._last_activity = time.monotonic()
 
-        self._gpio = None
-        self._gpio_active_high = bool(backlight_gpio_active_high)
         self._bl_path: Path | None = None
         self._blank_path: Path | None = None
-
-        # Strategy 0: GPIO backlight control
-        if backlight_gpio is not None and backlight_gpio >= 0:
-            try:
-                from gpiozero import DigitalOutputDevice
-
-                self._gpio = DigitalOutputDevice(
-                    int(backlight_gpio),
-                    active_high=self._gpio_active_high,
-                    initial_value=True,
-                )
-            except Exception as exc:
-                log.warning("screen_power: failed to init GPIO%s: %s", backlight_gpio, exc)
-                self._gpio = None
 
         # Strategy 1: explicit or auto-discovered backlight bl_power
         if backlight_path and backlight_path != "auto":
@@ -84,12 +66,7 @@ class ScreenPower:
         except Exception:
             pass
 
-        if self._gpio is not None:
-            log.info(
-                "screen_power: using GPIO%d (active_high=%s, timeout=%.0fs)",
-                int(backlight_gpio), self._gpio_active_high, self._timeout,
-            )
-        elif self._bl_path:
+        if self._bl_path:
             log.info("screen_power: using backlight %s (timeout=%.0fs)", self._bl_path, self._timeout)
         elif self._blank_path:
             log.info("screen_power: using fb blank %s (timeout=%.0fs)", self._blank_path, self._timeout)
@@ -148,16 +125,6 @@ class ScreenPower:
         log.info("screen: sleep")
 
     def _set_power(self, on: bool) -> None:
-        if self._gpio is not None:
-            try:
-                if on:
-                    self._gpio.on()
-                else:
-                    self._gpio.off()
-                return
-            except Exception as exc:
-                log.warning("screen_power: GPIO toggle failed: %s", exc)
-
         if self._bl_path is not None:
             value = b"0" if on else b"4"  # bl_power: 0=on, 4=off (FB_BLANK_POWERDOWN)
             try:
