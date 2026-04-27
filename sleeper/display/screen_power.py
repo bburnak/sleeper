@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import errno
 import logging
 import threading
 import time
@@ -135,16 +134,9 @@ class ScreenPower:
                 log.warning("screen_power: write %s failed: %s", self._bl_path, exc)
 
         if self._blank_path is not None:
-            # Some fb drivers (e.g. fbtft) only support FB_BLANK_NORMAL (1),
-            # not FB_BLANK_POWERDOWN (4); fall back on EINVAL.
-            candidates = [b"0"] if on else [b"4", b"1"]
-            for value in candidates:
-                try:
-                    with open(self._blank_path, "wb") as f:
-                        f.write(value)
-                    return
-                except OSError as exc:
-                    if exc.errno == errno.EINVAL and value != candidates[-1]:
-                        continue
-                    log.warning("screen_power: write %s failed: %s", self._blank_path, exc)
-                    return
+            value = b"0" if on else b"4"
+            try:
+                with open(self._blank_path, "wb") as f:
+                    f.write(value)
+            except OSError as exc:
+                log.warning("screen_power: write %s failed: %s", self._blank_path, exc)
