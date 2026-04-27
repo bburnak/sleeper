@@ -11,7 +11,6 @@ from sleeper.audio.noise import NoiseGenerator
 from sleeper.audio.player import StoryPlayer
 from sleeper.config import Config
 from sleeper.display.base import DisplayBackend, DisplayState
-from sleeper.display.screen_power import ScreenPower
 from sleeper.history import PlayHistory
 from sleeper.input.base import Action
 from sleeper.selector import StorySelector
@@ -48,7 +47,6 @@ class SessionManager:
         self._crossfade_thread: threading.Thread | None = None
 
         self._display: DisplayBackend | None = None
-        self._screen_power: ScreenPower | None = None
         self._current_volume: int = config.story_volume
         self._is_paused: bool = False
 
@@ -62,15 +60,6 @@ class SessionManager:
 
     def handle_action(self, action: Action) -> None:
         log.info("Action received: %s (state=%s)", action.name, self.state.name)
-
-        # Any user-driven action counts as activity for the screen idle timer.
-        # Touchscreen wake-taps are swallowed before reaching here, so this
-        # only resets the timer for genuine actions (touch + gamepad/gpio/...).
-        if self._screen_power is not None:
-            if not self._screen_power.is_on:
-                self._screen_power.wake()
-            else:
-                self._screen_power.notify_activity()
 
         if action == Action.START_STORY:
             self._start_session()
@@ -95,10 +84,6 @@ class SessionManager:
         """Register a display backend to receive state updates."""
         self._display = display
         self._notify_display()
-
-    def set_screen_power(self, screen_power: ScreenPower) -> None:
-        """Register a ScreenPower controller for input-driven wake/idle."""
-        self._screen_power = screen_power
 
     def _notify_display(self) -> None:
         if self._display is None:

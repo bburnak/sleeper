@@ -5,7 +5,6 @@ import threading
 import time
 
 from sleeper.input.base import Action, InputBackend
-from sleeper.display.screen_power import ScreenPower
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +57,6 @@ class TouchscreenInput(InputBackend):
         swap_xy: bool = True,
         invert_x: bool = False,
         invert_y: bool = False,
-        screen_power: ScreenPower | None = None,
     ) -> None:
         super().__init__()
         self._device_path = device_path
@@ -72,7 +70,6 @@ class TouchscreenInput(InputBackend):
         self._invert_x = invert_x
         self._invert_y = invert_y
         self._running = False
-        self._screen_power = screen_power
         # Debounce: track last fired action per grid cell
         self._last_action_time: float = 0.0
         self._last_action: Action | None = None
@@ -149,18 +146,6 @@ class TouchscreenInput(InputBackend):
                                 sx, sy = self._to_screen(raw_x, raw_y)
                                 action = self._coords_to_action(sx, sy)
                                 if action is not None:
-                                    sp = self._screen_power
-                                    # First tap while screen is off wakes the
-                                    # display and is intentionally swallowed.
-                                    if sp is not None and sp.enabled and not sp.is_on:
-                                        sp.wake()
-                                        log.info(
-                                            "Touch: raw=(%d,%d) screen=(%d,%d) -> wake (swallowed)",
-                                            raw_x, raw_y, sx, sy,
-                                        )
-                                        continue
-                                    if sp is not None:
-                                        sp.notify_activity()
                                     now = time.monotonic()
                                     if (
                                         action == self._last_action

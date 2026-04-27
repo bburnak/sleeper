@@ -35,13 +35,6 @@ input_device: auto
 # ALSA audio output device (use "default" for system default, "bluealsa" for Bluetooth)
 audio_output: bluealsa
 
-# Screen power management (pygame display backend only).
-# Seconds of touch/input inactivity before the LCD backlight turns off.
-# Set to 0 to keep the screen on permanently.
-screen_idle_timeout: 60
-# sysfs bl_power file; "auto" picks the first /sys/class/backlight/*/bl_power.
-screen_backlight_path: auto
-
 # Path to play history file
 history_file: ~/.sleeper/history.json
 

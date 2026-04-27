@@ -7,7 +7,6 @@ import threading
 from pathlib import Path
 
 from sleeper.display.base import DisplayBackend, DisplayState
-from sleeper.display.screen_power import ScreenPower
 from sleeper.input.base import Action
 
 log = logging.getLogger(__name__)
@@ -145,7 +144,6 @@ class PygameFbDisplay(DisplayBackend):
         height: int = 320,
         fb_device: str = "/dev/fb1",
         fps: int = 15,
-        screen_power: ScreenPower | None = None,
     ) -> None:
         super().__init__()
         self._width = width
@@ -158,7 +156,6 @@ class PygameFbDisplay(DisplayBackend):
         self._state_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._pressed_btn: tuple[int, int] | None = None  # (row, col) for press flash
-        self._screen_power = screen_power
 
     # ------------------------------------------------------------------
     # DisplayBackend interface
@@ -225,16 +222,6 @@ class PygameFbDisplay(DisplayBackend):
             while not self._stop_event.is_set():
                 with self._state_lock:
                     state = self._state
-
-                # Idle blanking: if user has been inactive long enough,
-                # turn the backlight off and stop redrawing until input wakes us.
-                sp = self._screen_power
-                if sp is not None and sp.enabled:
-                    if sp.should_sleep():
-                        sp.sleep()
-                    if not sp.is_on:
-                        clock.tick(self._fps)
-                        continue
 
                 self._draw(screen, state, font_large, font_medium, font_small)
                 self._blit_to_fb(screen, fb_mm)

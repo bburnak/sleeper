@@ -8,14 +8,13 @@ import threading
 
 from sleeper.config import load_config
 from sleeper.display.base import DisplayBackend
-from sleeper.display.screen_power import ScreenPower
 from sleeper.input.base import InputBackend
 from sleeper.session import SessionManager
 
 log = logging.getLogger("sleeper")
 
 
-def _create_input_backend(config, screen_power: ScreenPower | None = None) -> InputBackend:
+def _create_input_backend(config) -> InputBackend:
     if config.input_backend == "gamepad":
         from sleeper.input.gamepad import GamepadInput
         return GamepadInput(
@@ -63,20 +62,18 @@ def _create_input_backend(config, screen_power: ScreenPower | None = None) -> In
             swap_xy=config.touch_swap_xy,
             invert_x=config.touch_invert_x,
             invert_y=config.touch_invert_y,
-            screen_power=screen_power,
         )
     else:
         raise ValueError(f"Unknown input backend: {config.input_backend}")
 
 
-def _create_display_backend(config, screen_power: ScreenPower | None = None) -> DisplayBackend:
+def _create_display_backend(config) -> DisplayBackend:
     if config.display_backend == "pygame":
         from sleeper.display.pygame_fb import PygameFbDisplay
         return PygameFbDisplay(
             width=config.display_width,
             height=config.display_height,
             fb_device=config.display_fb_device,
-            screen_power=screen_power,
         )
     else:  # "none"
         from sleeper.display.none import NoneDisplay
@@ -102,21 +99,10 @@ def main() -> None:
     log.info("Noise type: %s, Stop time: %s", config.noise_type, config.stop_time)
 
     session = SessionManager(config)
-
-    # Shared screen-power controller: only meaningful with the pygame display.
-    screen_power: ScreenPower | None = None
-    if config.display_backend == "pygame":
-        screen_power = ScreenPower(
-            idle_timeout=config.screen_idle_timeout,
-            backlight_path=config.screen_backlight_path,
-            fb_device=config.display_fb_device,
-        )
-        session.set_screen_power(screen_power)
-
-    backend = _create_input_backend(config, screen_power)
+    backend = _create_input_backend(config)
     backend.set_callback(session.handle_action)
 
-    display = _create_display_backend(config, screen_power)
+    display = _create_display_backend(config)
     display.set_action_callback(session.handle_action)
     session.set_display(display)
 
@@ -128,8 +114,6 @@ def main() -> None:
         backend.stop()
         session.shutdown()
         display.stop()
-        if screen_power is not None:
-            screen_power.wake()
         shutdown_event.set()
 
     signal.signal(signal.SIGTERM, _shutdown)
