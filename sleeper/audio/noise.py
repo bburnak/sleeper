@@ -16,64 +16,48 @@ log = logging.getLogger(__name__)
 SAMPLE_RATE = 48000
 BLOCK_SIZE = 4096
 
-# Brown noise parameters (tuned for SAMPLE_RATE = 48000)
-# Leaky integrator: y[n] = LEAK * y[n-1] + STEP * white[n]
-# Steady-state std ≈ STEP / sqrt(1 - LEAK^2). With STEP=0.02, LEAK=0.999
-# -> std ≈ 0.447, peaks comfortably below 1.0 after GAIN scaling.
-_BROWN_LEAK = 0.999
-_BROWN_STEP = 0.02
-_BROWN_GAIN = 1.8
+# Length of pre-generated noise buffer (seconds). Generated once via FFT
+# spectral shaping; output of irfft is naturally periodic so the buffer
+# loops seamlessly with no boundary artifacts.
+_BUFFER_SECONDS = 30
+# Target peak amplitude for generated buffers. Headroom prevents the hard
+# clipping that produced the previous "intermittent buzz" artifact.
+_TARGET_PEAK = 0.85
 
 
 def _white_noise(frames: int, rng: np.random.Generator) -> np.ndarray:
     return rng.standard_normal(frames).astype(np.float32)
 
 
-def _brown_noise(frames: int, rng: np.random.Generator, state: list[float]) -> np.ndarray:
-    white = rng.standard_normal(frames).astype(np.float32)
-    out = np.empty(frames, dtype=np.float32)
-    val = state[0]
-    leak = _BROWN_LEAK
-    step = _BROWN_STEP
-    for i in range(frames):
-        val = leak * val + step * white[i]
-        out[i] = val
-    state[0] = val
-    # Fixed gain — DO NOT normalize per block (causes volume pumping and
-    # brightens the spectrum, defeating the purpose of brown noise).
-    np.multiply(out, _BROWN_GAIN, out=out)
-    np.clip(out, -1.0, 1.0, out=out)
-    return out
+def _shaped_noise_buffer(
+    seconds: int, sample_rate: int, exponent: float, rng: np.random.Generator,
+) -> np.ndarray:
+    """Generate a seamless looping noise buffer with 1/f**exponent amplitude.
 
-
-def _pink_noise(frames: int, rng: np.random.Generator, state: dict) -> np.ndarray:
-    """Voss-McCartney algorithm for pink noise."""
-    rows = state["rows"]
-    running_sum = state["running_sum"]
-    n_rows = len(rows)
-    out = np.empty(frames, dtype=np.float32)
-
-    for i in range(frames):
-        # Determine which row to update (trailing zeros of counter)
-        idx = state["counter"]
-        state["counter"] += 1
-        # Find lowest set bit index
-        changed = 0
-        if idx > 0:
-            changed = (idx ^ (idx - 1)).bit_length() - 1
-            changed = min(changed, n_rows - 1)
-
-        running_sum -= rows[changed]
-        rows[changed] = rng.standard_normal() * 0.5
-        running_sum += rows[changed]
-
-        out[i] = running_sum + rng.standard_normal() * 0.5
-
-    # Normalize
-    peak = np.abs(out).max()
+    exponent = 0.5 -> pink noise (-3 dB/oct power)
+    exponent = 1.0 -> brown noise (-6 dB/oct power)
+    """
+    n = seconds * sample_rate
+    white = rng.standard_normal(n).astype(np.float32)
+    spec = np.fft.rfft(white)
+    freqs = np.fft.rfftfreq(n, d=1.0 / sample_rate)
+    # Avoid div-by-zero at DC; we zero out DC explicitly below.
+    freqs[0] = 1.0
+    spec /= freqs ** exponent
+    spec[0] = 0.0  # remove DC offset
+    out = np.fft.irfft(spec, n).astype(np.float32)
+    peak = float(np.abs(out).max())
     if peak > 0:
-        out /= peak
+        out *= _TARGET_PEAK / peak
     return out
+
+
+def _brown_buffer(sample_rate: int, rng: np.random.Generator) -> np.ndarray:
+    return _shaped_noise_buffer(_BUFFER_SECONDS, sample_rate, 1.0, rng)
+
+
+def _pink_buffer(sample_rate: int, rng: np.random.Generator) -> np.ndarray:
+    return _shaped_noise_buffer(_BUFFER_SECONDS, sample_rate, 0.5, rng)
 
 
 class NoiseGenerator:
@@ -95,16 +79,29 @@ class NoiseGenerator:
         self._lock = threading.Lock()
         self._rng = np.random.default_rng()
 
-        # State for brown noise
-        self._brown_state: list[float] = [0.0]
+        # Pre-generated looping buffer for brown/pink noise. Allocated lazily
+        # in start() so we don't pay the FFT cost at import time.
+        self._buffer: np.ndarray | None = None
+        self._buffer_pos: int = 0
 
-        # State for pink noise (Voss-McCartney)
-        n_rows = 16
-        self._pink_state: dict = {
-            "rows": [0.0] * n_rows,
-            "running_sum": 0.0,
-            "counter": 0,
-        }
+    def _read_block(self, frames: int) -> np.ndarray:
+        """Return `frames` samples of the active noise type. Caller holds lock."""
+        if self._noise_type in ("brown", "pink") and self._buffer is not None:
+            buf = self._buffer
+            n = buf.shape[0]
+            pos = self._buffer_pos
+            end = pos + frames
+            if end <= n:
+                data = buf[pos:end].copy()
+                self._buffer_pos = end % n
+            else:
+                # Wrap around the looping buffer.
+                first = buf[pos:n]
+                second = buf[: end - n]
+                data = np.concatenate((first, second))
+                self._buffer_pos = end - n
+            return data
+        return _white_noise(frames, self._rng)
 
     def _callback(self, outdata: np.ndarray, frames: int, time_info: object, status: sd.CallbackFlags) -> None:
         if status:
@@ -112,12 +109,7 @@ class NoiseGenerator:
 
         with self._lock:
             vol = self._volume
-            if self._noise_type == "brown":
-                data = _brown_noise(frames, self._rng, self._brown_state)
-            elif self._noise_type == "pink":
-                data = _pink_noise(frames, self._rng, self._pink_state)
-            else:
-                data = _white_noise(frames, self._rng)
+            data = self._read_block(frames)
 
             # Apply fade towards target volume
             if self._fade_step != 0.0:
@@ -132,16 +124,22 @@ class NoiseGenerator:
         outdata[:, 0] = data * vol
 
     def start(self, noise_type: str = "white", volume: int = 30) -> None:
+        # Generate the looping buffer outside the lock — the FFT is fast on
+        # 30 s @ 48 kHz but still O(100 ms) on a Pi 3, no need to block the
+        # audio callback on it.
+        buffer: np.ndarray | None = None
+        if noise_type == "brown":
+            buffer = _brown_buffer(SAMPLE_RATE, self._rng)
+        elif noise_type == "pink":
+            buffer = _pink_buffer(SAMPLE_RATE, self._rng)
+
         with self._lock:
             self._noise_type = noise_type
             self._volume = volume / 100.0
             self._target_volume = self._volume
             self._fade_step = 0.0
-            # Reset state
-            self._brown_state[0] = 0.0
-            self._pink_state["rows"] = [0.0] * len(self._pink_state["rows"])
-            self._pink_state["running_sum"] = 0.0
-            self._pink_state["counter"] = 0
+            self._buffer = buffer
+            self._buffer_pos = 0
 
         if self._use_aplay:
             self._start_aplay()
@@ -180,12 +178,7 @@ class NoiseGenerator:
             while self._running and self._aplay_proc and self._aplay_proc.poll() is None:
                 with self._lock:
                     vol = self._volume
-                    if self._noise_type == "brown":
-                        data = _brown_noise(BLOCK_SIZE, self._rng, self._brown_state)
-                    elif self._noise_type == "pink":
-                        data = _pink_noise(BLOCK_SIZE, self._rng, self._pink_state)
-                    else:
-                        data = _white_noise(BLOCK_SIZE, self._rng)
+                    data = self._read_block(BLOCK_SIZE)
 
                     if self._fade_step != 0.0:
                         remaining = self._target_volume - self._volume
