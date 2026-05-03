@@ -43,6 +43,12 @@ input_device: auto
 # ALSA audio output device (use "default" for system default, "bluealsa" for Bluetooth)
 audio_output: bluealsa
 
+# ALSA mixer control used for system-volume sync.
+# On Raspberry Pi 3.5mm output, card 1 is the headphone jack and PCM is the
+# correct playback gain control.
+alsa_card: 1
+alsa_mixer_control: PCM
+
 # Path to play history file
 history_file: ~/.sleeper/history.json
 

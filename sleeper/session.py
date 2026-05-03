@@ -50,6 +50,10 @@ class SessionManager:
         self._current_volume: int = config.story_volume
         self._is_paused: bool = False
 
+        # Align the hardware mixer with the configured startup volume so the
+        # on-screen percentage matches real analog output level from launch.
+        self._sync_system_volume(self._current_volume)
+
         # Wire up listened tracking
         self.player.set_listened_callback(
             self._on_story_listened, threshold=config.listened_threshold
@@ -184,45 +188,61 @@ class SessionManager:
                 self.noise.set_volume(new_vol)
 
             self._notify_display()
-
-            # Try configured card first, then common fallbacks.
-            amixer_bases: list[list[str]] = []
-            if self.config.alsa_card is not None:
-                amixer_bases.append(["amixer", "-c", str(self.config.alsa_card)])
-            amixer_bases.extend([
-                ["amixer", "-c", "0"],
-                ["amixer", "-c", "1"],
-                ["amixer"],
-            ])
-
-            # De-duplicate while preserving order
-            unique_bases: list[list[str]] = []
-            seen: set[tuple[str, ...]] = set()
-            for base in amixer_bases:
-                key = tuple(base)
-                if key not in seen:
-                    seen.add(key)
-                    unique_bases.append(base)
-
-            last_error = ""
-            for amixer_base in unique_bases:
-                set_result = subprocess.run(
-                    [*amixer_base, "set", self.config.alsa_mixer_control, f"{new_vol}%"],
-                    capture_output=True, text=True, timeout=5,
-                )
-                if set_result.returncode != 0:
-                    last_error = (set_result.stderr or set_result.stdout).strip()
-                    continue
-                log.info("System volume set to %d%%", new_vol)
-                return
-
-            log.debug(
-                "System mixer sync failed for control=%s (app volume still updated). Last error: %s",
-                self.config.alsa_mixer_control,
-                last_error,
-            )
+            self._sync_system_volume(new_vol)
         except (subprocess.SubprocessError, FileNotFoundError) as e:
             log.debug("System mixer sync failed (app volume still updated): %s", e)
+
+    def _amixer_bases(self) -> list[list[str]]:
+        # Prefer an explicit card when configured. Otherwise try common cards
+        # and the implicit default, applying to every successful target so a
+        # multi-card system doesn't stop on the wrong device.
+        amixer_bases: list[list[str]] = []
+        if self.config.alsa_card is not None:
+            amixer_bases.append(["amixer", "-c", str(self.config.alsa_card)])
+        amixer_bases.extend([
+            ["amixer", "-c", "0"],
+            ["amixer", "-c", "1"],
+            ["amixer"],
+        ])
+
+        unique_bases: list[list[str]] = []
+        seen: set[tuple[str, ...]] = set()
+        for base in amixer_bases:
+            key = tuple(base)
+            if key not in seen:
+                seen.add(key)
+                unique_bases.append(base)
+        return unique_bases
+
+    def _sync_system_volume(self, volume: int) -> None:
+        last_error = ""
+        successes = 0
+        for amixer_base in self._amixer_bases():
+            set_result = subprocess.run(
+                [*amixer_base, "set", self.config.alsa_mixer_control, f"{volume}%"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if set_result.returncode != 0:
+                last_error = (set_result.stderr or set_result.stdout).strip()
+                continue
+            successes += 1
+
+            # When an explicit card is configured, stop there. Otherwise keep
+            # going so all successful mixer targets stay aligned.
+            if self.config.alsa_card is not None:
+                break
+
+        if successes:
+            log.info("System volume set to %d%%", volume)
+            return
+
+        log.debug(
+            "System mixer sync failed for control=%s (app volume still updated). Last error: %s",
+            self.config.alsa_mixer_control,
+            last_error,
+        )
 
     # ── Internal transitions ──
 
