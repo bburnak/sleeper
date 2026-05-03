@@ -42,11 +42,5 @@ PrivateTmp=true
 # mpv talks to ALSA.
 Environment=SDL_AUDIODRIVER=dummy
 
-# Keep framebuffer and input access explicit for the display stack.
-DeviceAllow=char-input rw
-DeviceAllow=/dev/fb0 rw
-DeviceAllow=/dev/fb1 rw
-DeviceAllow=/dev/tty1 rw
-
 [Install]
 WantedBy=multi-user.target
