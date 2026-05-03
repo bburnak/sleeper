@@ -36,6 +36,8 @@ class StoryPlayer:
                 opts["audio_device"] = "alsa"
             else:
                 opts["audio_device"] = f"alsa/{self._audio_device}"
+            opts["log_handler"] = self._log_mpv_message
+            opts["loglevel"] = "info"
             self._player = mpv.MPV(**opts)
 
             @self._player.property_observer("percent-pos")
@@ -52,15 +54,33 @@ class StoryPlayer:
 
             @self._player.event_callback("end-file")
             def _end_handler(event: mpv.MpvEvent) -> None:
+                event_data = getattr(event, "data", None)
+                reason_raw: object | None = None
+                if isinstance(event_data, dict):
+                    reason_raw = event_data.get("reason")
+                else:
+                    reason_raw = getattr(event_data, "reason", None)
+                if isinstance(reason_raw, bytes):
+                    reason = reason_raw.decode(errors="replace")
+                else:
+                    reason = reason_raw
                 # Suppress on_end when the stop was requested by us (skip/stop/replace).
                 # Only fire for natural end-of-file (or unknown reasons treated as natural).
                 if self._expecting_stop:
                     self._expecting_stop = False
                     return
+                if reason not in (None, "eof"):
+                    log.warning("mpv end-file reason=%s data=%r", reason, event_data)
+                    return
                 if self._on_end:
                     self._on_end()
 
         return self._player
+
+    @staticmethod
+    def _log_mpv_message(level: str, component: str, message: str) -> None:
+        log_fn = log.info if level in {"info", "status", "v"} else log.warning
+        log_fn("mpv[%s] %s", component, message.rstrip())
 
     def set_on_end(self, callback: Callable[[], None]) -> None:
         self._on_end = callback

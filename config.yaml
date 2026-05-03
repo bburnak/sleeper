@@ -21,11 +21,12 @@ fade_out_minutes: 5
 crossfade_seconds: 10
 
 # Seconds to overlap noise with end of story (0 = legacy post-EOF crossfade).
-# When > 0, noise starts this many seconds *before* the story ends and fades
-# up to volume over the same interval. The story keeps playing to its natural
-# end, so the audio device (and Bluetooth A2DP link) never goes idle at the
-# story → noise handover.
-crossfade_overlap_seconds: 5
+# Must be 0 on the 3.5mm-jack setup: bcm2835 headphones is exclusive (dmix
+# broken on this kernel), so noise can't start before the story player
+# releases the PCM. When > 0, noise starts this many seconds *before* the
+# story ends and fades up over the same interval — only safe if the
+# audio device supports concurrent open (e.g. Bluetooth via bluealsa).
+crossfade_overlap_seconds: 0
 
 # Fraction of story that must play to count as "listened" (0.0-1.0)
 listened_threshold: 0.10

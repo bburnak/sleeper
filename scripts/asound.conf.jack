@@ -1,0 +1,21 @@
+# Sleeper: 3.5mm headphone jack — direct plug→hw, no dmix.
+#
+# dmix is broken on this Pi/kernel (bcm2835 headphones): it produces
+# EINTR write errors and failed xrun_recovery as soon as a client opens
+# the slave PCM. Multiple variants (different period/buffer sizes, ipc
+# keys) all fail identically. Falling back to direct hw means the device
+# is exclusive — only one client at a time. The session manager avoids
+# concurrent open by leaving crossfade_overlap_seconds=0 so noise doesn't
+# start until the story player has closed the PCM.
+#
+# Use card name (not index) so this works regardless of card ordering.
+
+pcm.echo {
+    type plug
+    slave.pcm "hw:Headphones,0"
+}
+
+ctl.echo {
+    type hw
+    card "Headphones"
+}

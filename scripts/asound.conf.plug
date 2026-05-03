@@ -1,0 +1,8 @@
+pcm.echo {
+    type plug
+    slave.pcm "hw:Headphones,0"
+}
+ctl.echo {
+    type hw
+    card "Headphones"
+}

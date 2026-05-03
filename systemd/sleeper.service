@@ -5,10 +5,19 @@ Wants=bluetooth.target
 
 [Service]
 Type=simple
+PermissionsStartOnly=true
+ExecStartPre=/bin/sh -c '/usr/bin/printf "\033[?25l" > /dev/tty1 || true'
 ExecStart=/opt/sleeper/venv/bin/python -m sleeper --config /etc/sleeper/config.yaml
 WorkingDirectory=/opt/sleeper
 Restart=on-failure
 RestartSec=5
+
+Environment=PYTHONPATH=/opt
+Environment=SDL_VIDEODRIVER=fbcon
+Environment=SDL_FBDEV=/dev/fb1
+Environment=SDL_MOUSEDRV=evdev
+Environment=SDL_MOUSEDEV=/dev/input/event1
+Environment=DISPLAY=
 
 # Run as a dedicated user with access to audio, input devices, and GPIO
 User=sleeper
@@ -22,9 +31,22 @@ ProtectHome=read-only
 ReadWritePaths=/home/sleeper/.sleeper
 PrivateTmp=true
 
-# Allow access to audio and input devices
-DeviceAllow=/dev/snd/* rw
-DeviceAllow=/dev/input/* r
+# Audio/input device access is granted via the supplementary groups above.
+# Do NOT use DeviceAllow= here: ALSA's card-name resolution
+# (snd_config_get_card / snd_card_get_index) needs broader cgroup device
+# access than DeviceAllow=/dev/snd/* exposes, and fails with
+# "Cannot get card index for Headphones" / "No such device".
+
+# SDL (pygame) tries to grab ALSA on import and locks the headphones PCM
+# (which is exclusive on bcm2835). Force its dummy audio driver so only
+# mpv talks to ALSA.
+Environment=SDL_AUDIODRIVER=dummy
+
+# Keep framebuffer and input access explicit for the display stack.
+DeviceAllow=char-input rw
+DeviceAllow=/dev/fb0 rw
+DeviceAllow=/dev/fb1 rw
+DeviceAllow=/dev/tty1 rw
 
 [Install]
 WantedBy=multi-user.target
