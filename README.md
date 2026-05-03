@@ -104,6 +104,13 @@ sudo systemctl status sleeper
 sudo journalctl -u sleeper -f
 ```
 
+Important notes for the Raspberry Pi 3.5mm jack setup:
+
+- Do not add any `DeviceAllow=` lines to `systemd/sleeper.service`. In systemd, any `DeviceAllow=` entry turns on device cgroup filtering for the service. Even if `/dev/snd/*` is not explicitly denied, ALSA card enumeration can still fail during `snd_card_get_index()` / `snd_config_get_card()` and mpv will die with `Playback open error: No such device`.
+- Access to audio and input devices should come from `SupplementaryGroups=audio input gpio bluetooth`, not from `DeviceAllow=`.
+- Keep `Environment=SDL_AUDIODRIVER=dummy` in the service. Without it, pygame/SDL may grab ALSA on import and steal the exclusive bcm2835 headphones PCM before mpv opens it.
+- For the headphone jack ALSA config, use `scripts/asound.conf.jack` (or the equivalent `/etc/asound.conf` content). It uses a direct `plug -> hw:Headphones,0` path because `dmix` is broken on this Pi/kernel.
+
 ## Updating a Deployment
 
 If `/opt/sleeper` is a git checkout of this repo (recommended), pull the latest
